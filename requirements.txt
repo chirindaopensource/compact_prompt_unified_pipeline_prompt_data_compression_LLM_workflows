@@ -1,0 +1,86 @@
+﻿# =============================================================================
+# CompactPrompt: Production Requirements
+# =============================================================================
+# 
+# A Unified Pipeline for Prompt and Data Compression in LLM Workflows
+# 
+# This requirements file specifies all third-party dependencies needed to run
+# the CompactPrompt implementation as described in Choi et al. (2025).
+# 
+# Installation:
+#   pip install -r requirements.txt
+# 
+# Post-Installation (spaCy model):
+#   python -m spacy download en_core_web_sm
+# 
+# Python Version: >=3.9, <3.13
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Core Data Science & Numerical Computing
+# -----------------------------------------------------------------------------
+numpy~=1.26.0
+pandas~=2.1.0
+
+# -----------------------------------------------------------------------------
+# Natural Language Processing
+# -----------------------------------------------------------------------------
+# spaCy: Dependency parsing for phrase-level segmentation
+spacy~=3.7.0
+
+# Note: After installing spacy, download the English language model:
+#   python -m spacy download en_core_web_sm
+
+# -----------------------------------------------------------------------------
+# Tokenization Libraries
+# -----------------------------------------------------------------------------
+# tiktoken: OpenAI's BPE tokenizer for GPT models
+tiktoken~=0.5.0
+
+# transformers: Hugging Face library for AutoTokenizer (Llama, etc.)
+transformers~=4.36.0
+
+# tokenizers: Fast tokenization backend (auto-installed by transformers)
+tokenizers~=0.15.0
+
+# -----------------------------------------------------------------------------
+# Machine Learning & Embeddings
+# -----------------------------------------------------------------------------
+# scikit-learn: KMeans clustering, silhouette scoring, distance computations
+scikit-learn~=1.3.0
+
+# sentence-transformers: Semantic embeddings (all-mpnet-base-v2)
+sentence-transformers~=2.2.0
+
+# PyTorch: Required backend for sentence-transformers
+# Note: Install CPU or GPU variant based on your hardware
+torch~=2.1.0
+
+# -----------------------------------------------------------------------------
+# LLM Provider SDKs
+# -----------------------------------------------------------------------------
+# OpenAI: GPT-4 and related models
+openai~=1.6.0
+
+# Anthropic: Claude models
+anthropic~=0.8.0
+
+# Together AI: Open-source model hosting
+together~=0.2.0
+
+# -----------------------------------------------------------------------------
+# Optional: Development & Testing Dependencies
+# -----------------------------------------------------------------------------
+# Uncomment these for development, testing, and quality assurance
+
+# pytest~=7.4.0           # Unit testing framework
+# pytest-cov~=4.1.0       # Coverage reporting
+# black~=23.12.0          # Code formatting
+# mypy~=1.7.0             # Static type checking
+# flake8~=6.1.0           # Linting
+# isort~=5.13.0           # Import sorting
+# pre-commit~=3.6.0       # Git hooks for code quality
+
+# =============================================================================
+# End of Requirements
+# =============================================================================
