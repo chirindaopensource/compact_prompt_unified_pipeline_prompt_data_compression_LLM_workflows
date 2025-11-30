@@ -1,0 +1,446 @@
+﻿# ==============================================================================
+# CompactPrompt Study Configuration
+# ==============================================================================
+# This configuration file defines all parameters required to execute the
+# CompactPrompt pipeline as described in the paper:
+# "CompactPrompt: A Unified Pipeline for Prompt and Data Compression in LLM Workflows"
+# ==============================================================================
+
+# ---------------------------------------------------------------------
+# 1. RAW / UNPROCESSED INPUT DATA STRUCTURE SCHEMAS (EXAMPLES)
+# ---------------------------------------------------------------------
+raw_data_schemas:
+  # -------------------------------------------------------------
+  # 1.1 TAT-QA example schema (Section 5.1 "Task Setup")
+  # -------------------------------------------------------------
+  tatqa_example_schema:
+    example_id: "tatqa_0001"
+    split: "train"
+    question_text: "What was the total revenue in 2019?"
+    tables:
+      - table_id: "tatqa_0001_t1"
+        caption: "Consolidated Statements of Operations"
+        headers:
+          - "Year"
+          - "Revenue (USD millions)"
+          - "Net income (USD millions)"
+        rows:
+          - ["2017", "1200", "150"]
+          - ["2018", "1350", "160"]
+          - ["2019", "1425", "175"]
+          - ["2020", "1300", "140"]
+    passages:
+      - passage_id: "tatqa_0001_p1"
+        text: >
+          The company experienced steady growth in revenue from 2017 to 2019,
+          driven primarily by increased subscription income and international expansion.
+          In 2020, revenue declined slightly due to macroeconomic conditions.
+    answer_type: "span_number"
+    answer_value: "1425"
+    answer_unit: "USD millions"
+
+  # -------------------------------------------------------------
+  # 1.2 Fin-QA example schema (Section 5.1 "Task Setup")
+  # -------------------------------------------------------------
+  finqa_example_schema:
+    example_id: "finqa_0001"
+    split: "train"
+    question_text: "By how much did the net income increase from 2018 to 2019?"
+    tables:
+      - table_id: "finqa_0001_t1"
+        caption: "Net Income Over Time"
+        headers: ["Year", "Net income (USD millions)"]
+        rows:
+          - ["2017", "150"]
+          - ["2018", "160"]
+          - ["2019", "175"]
+          - ["2020", "140"]
+    passages:
+      - passage_id: "finqa_0001_p1"
+        text: >
+          Net income grew steadily from 2017 through 2019 before falling in 2020
+          due to one-time restructuring charges.
+    answer_type: "number"
+    answer_value: "15"
+    answer_unit: "USD millions"
+
+  # -------------------------------------------------------------
+  # 1.3 Offline corpus document schema (Section 3.1 "Static Self-Information")
+  # -------------------------------------------------------------
+  corpus_document_schema:
+    doc_id: "wiki_en_000001"
+    source: "wikipedia"  # One of {"wikipedia", "sharegpt", "arxiv"}.
+    title: "Revenue"
+    text: >
+      Revenue is the income that a business has from its normal business activities,
+      usually from the sale of goods and services to customers.
+
+# ---------------------------------------------------------------------
+# 2. OFFLINE CORPUS CONFIGURATION (Static Self-Information, Section 3.1)
+# ---------------------------------------------------------------------
+offline_corpus_config:
+  sources:
+    - name: "wikipedia"
+      description: >
+        English Wikipedia text dump used to estimate general token frequencies
+        for static self-information.
+      role: "static_self_information_corpus"
+    - name: "sharegpt"
+      description: >
+        ShareGPT-style conversational logs (user-assistant chat transcripts),
+        capturing conversational and prompt-like language.
+      role: "static_self_information_corpus"
+    - name: "arxiv"
+      description: >
+        arXiv abstracts and/or full articles, including technical and scientific
+        language relevant to LLM usage.
+      role: "static_self_information_corpus"
+  tokenization_scheme:
+    name: "<REQUIRED_BY_IMPLEMENTER>"  # Not specified in paper.
+    compatibility_requirement: >
+      Tokenizer should approximate the tokenization used by the downstream LLMs
+      to ensure that static self-information aligns with the LLM’s tokenization.
+
+# ---------------------------------------------------------------------
+# 3. HARD PROMPT COMPRESSION PARAMETERS (Section 3.1)
+# ---------------------------------------------------------------------
+hard_prompt_compression_config:
+  use_static_self_information: true
+  use_dynamic_self_information: true
+
+  delta_relative_difference_threshold: 0.1  # As in Equations (3) and (4).
+
+  combined_score_rule:
+    description: >
+      If relative difference Δ between static and dynamic self-information is <= 0.1,
+      use their arithmetic mean as the combined score; otherwise, rely on the dynamic score.
+    cases:
+      - condition: "Delta <= delta_relative_difference_threshold"
+        combination: "0.5 * (s_stat + s_dyn)"
+      - condition: "Delta > delta_relative_difference_threshold"
+        combination: "s_dyn"
+
+  phrase_grouping:
+    method: "dependency_based"
+    parser_library: "<REQUIRED_BY_IMPLEMENTER>"  # e.g., spaCy model; paper references spaCy in related work.
+    grouping_granularity: >
+      Phrases constructed based on dependency structure (e.g., noun phrases,
+      verb phrases, prepositional phrases) to maintain grammatical coherence during pruning.
+
+  phrase_score_aggregation:
+    allowed_methods: ["mean", "sum"]
+    chosen_method: "<REQUIRED_BY_IMPLEMENTER>"  # Paper does not fix mean vs sum.
+    rationale: >
+      Aggregate token-level combined scores C(t_i) into phrase-level scores C(phi_j)
+      for phrase ranking and pruning under a token budget.
+
+  prompt_token_budget: "<REQUIRED_BY_IMPLEMENTER>"  # Paper does not give a numeric budget.
+
+  pruning_strategy:
+    unit_of_pruning: "phrase"
+    ranking_order: "ascending_score"  # Remove lowest-scoring phrases first.
+    stop_criterion: >
+      Stop pruning when the prompt’s token count is <= prompt_token_budget
+      or when further pruning is judged too risky for semantic integrity.
+      Exact numeric/heuristic thresholds are not specified in the paper.
+
+# ---------------------------------------------------------------------
+# 4. N-GRAM ABBREVIATION PARAMETERS (Section 3.2 & Section 5.2)
+# ---------------------------------------------------------------------
+ngram_abbreviation_config:
+  ngram_length:
+    default: "<REQUIRED_BY_IMPLEMENTER>"  # Paper suggests 2-5 as typical.
+    common_range: [2, 3, 4, 5]
+    role: "Length of token sequences considered for n-gram abbreviation."
+
+  dictionary_size_K:
+    default: "<REQUIRED_BY_IMPLEMENTER>"  # K ~ 100-150 mentioned, but not fixed.
+    typical_range: [100, 150]
+    role: >
+      Number of most frequent n-grams stored in the abbreviation dictionary per corpus.
+
+  top_n_T:
+    used_values_in_experiments: [2, 3, 4, 5]
+    best_performing_value: 3  # From experiments: T=3 with G=2.
+    role: >
+      Number of most frequent n-grams that are actively replaced by placeholders
+      in a given configuration.
+
+  ngram_size_G:
+    used_values_in_experiments: [2, 3, 4]
+    best_performing_value: 2  # Best at G=2 (bigrams) with T=3.
+    role: >
+      Length of n-grams for abbreviation in the ablation study; affects semantic granularity.
+
+  placeholder_token_design:
+    format_description: >
+      Short, human-readable alphanumeric placeholders (e.g., 'ABC1', 'BD2')
+      that are unlikely to collide with natural language tokens.
+    uniqueness_requirement: "Each placeholder must map to exactly one n-gram."
+    reversibility_requirement: >
+      Abbreviation must be exactly reversible using a stored dictionary mapping
+      placeholders back to original n-grams.
+
+# ---------------------------------------------------------------------
+# 5. NUMERIC QUANTIZATION PARAMETERS (Section 3.3)
+# ---------------------------------------------------------------------
+numeric_quantization_config:
+  allowed_schemes: ["uniform_integer", "kmeans_based"]
+
+  uniform_integer:
+    bit_width_b: "<REQUIRED_BY_IMPLEMENTER>"  # Not fixed in paper.
+    levels_L_formula: "L = 2 ** b"
+
+    encoding_formula: >
+      q_i = round(((x_i - min_x) / (max_x - min_x)) * (L - 1))
+    reconstruction_formula: >
+      hat_x_i = min_x + (q_i / (L - 1)) * (max_x - min_x)
+    max_error_formula: >
+      epsilon_max = (max_x - min_x) / (L - 1)
+    design_intent: >
+      Choose bit-width b such that the maximum absolute error epsilon_max is
+      acceptable for the financial QA tasks. The paper does not prescribe a specific b.
+
+  kmeans_based:
+    num_clusters_k: "<REQUIRED_BY_IMPLEMENTER>"  # Not specified in paper.
+
+    encoding_rule: >
+      For each x_i, assign q_i = argmin_j |x_i - mu_j|, where mu_j are centroids
+      obtained from k-means clustering over the column values.
+    reconstruction_rule: >
+      For each code q_i, reconstruct hat_x_i = mu_{q_i}.
+    error_objective: >
+      k-means-based quantization minimizes average squared error, leveraging non-uniform
+      data distributions.
+
+# ---------------------------------------------------------------------
+# 6. FEW-SHOT REPRESENTATIVE EXAMPLE SELECTION (Section 3.4)
+# ---------------------------------------------------------------------
+fewshot_selection_config:
+  embedding_model:
+    name: "all-mpnet-base-v2"
+    family: "MPNet-based sentence embedding model"
+    role:
+      - "semantic_similarity_evaluation"
+      - "clustering_for_fewshot_selection"
+
+  numeric_feature_standardization:
+    method: "z_score"
+    description: >
+      For numeric features used in clustering, subtract mean and divide by standard
+      deviation per feature (zero mean, unit variance).
+
+  kmeans_candidate_k_range:
+    start: 5
+    end: 50
+    inclusive: true
+    role: >
+      Candidate cluster counts k ∈ {5,...,50} for k-means; used for silhouette-based
+      selection of optimal cluster number k*.
+
+  cluster_number_selection:
+    criterion: "max_average_silhouette_score"
+    symbol: "k_star"
+    description: >
+      Select k* as the value of k in the candidate range that maximizes the average
+      silhouette score over all examples.
+
+  prototype_selection_rule:
+    rule: "closest_to_centroid"
+    distance_metric: "euclidean"
+    description: >
+      Within each cluster j (1..k*), select the example whose embedding vector v_i is
+      closest to the cluster centroid c_j (in Euclidean distance) as the prototype exemplar.
+
+  num_exemplars_per_prompt: 3
+  exemplar_selection_modes:
+    - "random"
+    - "representative"
+
+# ---------------------------------------------------------------------
+# 7. SEMANTIC FIDELITY EVALUATION (Section 3.5)
+# ---------------------------------------------------------------------
+semantic_evaluation_config:
+  embedding_model:
+    name: "all-mpnet-base-v2"
+    role:
+      - "encode_original_and_compressed_prompts"
+      - "provide_vectors_for_cosine_similarity"
+
+  cosine_similarity:
+    metric: "cosine"
+    summary_statistics:
+      - "mean"
+      - "5th_percentile"
+    percentile_p: 0.05
+
+  interpretive_thresholds:
+    semantic_safety_similarity_min: 0.92  # As stated in conclusion.
+    description: >
+      Empirically, cosine similarity >= 0.92 between original and compressed embeddings
+      generally indicates safe compression, though rare nuance shifts may still occur.
+
+# ---------------------------------------------------------------------
+# 8. HUMAN EVALUATION PARAMETERS (Section 3.5.2)
+# ---------------------------------------------------------------------
+human_evaluation_config:
+  num_evaluators: 3
+
+  rating_scale:
+    min_score: 1
+    max_score: 5
+    interpretation:
+      "1": "completely different meaning"
+      "5": "completely identical meaning"
+
+  calibration_phase:
+    num_examples_per_dataset_for_training: 15
+    datasets: ["TAT-QA", "Fin-QA"]
+    purpose: >
+      Align evaluators' scoring standards using a small set of illustrative examples
+      from each dataset.
+
+  evaluation_phase:
+    num_pairs_rated_total: 90
+    pair_source_datasets: ["TAT-QA", "Fin-QA"]
+    sampling_strategy: "randomly_sampled_original_compressed_pairs"
+
+# ---------------------------------------------------------------------
+# 9. LLM CONFIGURATION (Sections 4 & 5)
+# ---------------------------------------------------------------------
+llm_config:
+  scorer_llm_options:
+    - provider: "openai"
+      model_name: "gpt-4o"
+      role: "dynamic_self_information_scorer"
+    - provider: "openai"
+      model_name: "gpt-4.1-mini"
+      role: "dynamic_self_information_scorer"
+    - provider: "anthropic"
+      model_name: "claude-3.5-sonnet"
+      role: "dynamic_self_information_scorer"
+    - provider: "meta"
+      model_name: "llama-3.3-70b-instruct"
+      role: "dynamic_self_information_scorer"
+
+  target_llms_for_evaluation:
+    - provider: "openai"
+      model_name: "gpt-4o"
+      role: "downstream_QA"
+    - provider: "openai"
+      model_name: "gpt-4.1-mini"
+      role: "downstream_QA"
+    - provider: "anthropic"
+      model_name: "claude-3.5-sonnet"
+      role: "downstream_QA"
+    - provider: "meta"
+      model_name: "llama-3.3-70b-instruct"
+      role: "downstream_QA"
+
+  decoding_parameters:
+    temperature: "<REQUIRED_BY_IMPLEMENTER>"  # Paper does not specify.
+    top_p: "<REQUIRED_BY_IMPLEMENTER>"
+    max_tokens: "<REQUIRED_BY_IMPLEMENTER>"
+    use_logprobs_for_scoring: true
+
+  api_credentials:
+    openai_api_key: "<EXTERNAL_SECRET_NOT_IN_PAPER>"
+    anthropic_api_key: "<EXTERNAL_SECRET_NOT_IN_PAPER>"
+    meta_access_token: "<EXTERNAL_SECRET_NOT_IN_PAPER>"
+
+# ---------------------------------------------------------------------
+# 10. EXPERIMENTAL DESIGN & ABLATION PARAMETERS (Section 5 & Appendix)
+# ---------------------------------------------------------------------
+experiment_design_config:
+  datasets:
+    - name: "TAT-QA"
+      description: >
+        Question answering benchmark requiring integration of structured tables
+        with unstructured narrative passages.
+    - name: "Fin-QA"
+      description: >
+        Financial QA benchmark emphasizing quantitative reasoning grounded
+        in financial reports.
+
+  prompting_conditions:
+    - "baseline"
+    - "baseline_plus_3_random"
+    - "baseline_plus_3_representative"
+    - "compressed_prompt"
+    - "compressed_plus_3_random"
+    - "compressed_plus_3_representative"
+    - "compressed_plus_data"
+    - "compressed_plus_data_plus_added_context"
+
+  ngram_ablation_grid:
+    top_n_values: [2, 3, 4, 5]
+    ngram_sizes: [2, 3, 4]
+
+  best_ngram_configuration:
+    top_n_T: 3
+    ngram_size_G: 2
+
+  evaluation_metric:
+    name: "accuracy"
+    unit: "percentage_points"
+    description: >
+      Accuracy (%) = (number of correct model answers) / (total number of evaluated examples),
+      using exact match for numeric/textual answers as appropriate.
+
+# ---------------------------------------------------------------------
+# 11. PROMPT TEMPLATE PLACEHOLDERS (NOT SPECIFIED IN PAPER)
+# ---------------------------------------------------------------------
+prompt_templates:
+  qa_prompt_template: |
+    # REQUIRED INPUT: The CompactPrompt paper does NOT specify exact QA prompt wording.
+    # Implementers MUST design a concrete template that combines:
+    #   - Task instructions (e.g., 'You are a financial QA assistant...').
+    #   - Few-shot exemplars (optional; 3 random or 3 representative examples).
+    #   - The target question, tables, and passages.
+    # This placeholder documents that a QA prompt template is an essential input,
+    # but its content is not defined in the paper.
+  scoring_prompt_template: |
+    # NOTE: For dynamic self-information, the model is used as a scorer.
+    # In practice, you pass the prefix context (c) and read the model's next-token
+    # logprobs. No additional natural-language wrapper is mandated by the paper.
+    # This entry records that you must configure how you invoke the LLM for logprobs,
+    # but there is no textual template in the article.
+
+# ---------------------------------------------------------------------
+# 12. DATA PRE-PROCESSING PARAMETERS (INFERRED FROM METHODS)
+# ---------------------------------------------------------------------
+preprocessing_config:
+  table_serialization:
+    method: "<REQUIRED_BY_IMPLEMENTER>"  # E.g., markdown, CSV-like, etc.
+    requirement: >
+      Tables must be serialized to text in a consistent format for both baseline
+      and compressed conditions. The paper does not impose a specific format.
+  text_normalization:
+    steps: []  # No special normalization is mandated.
+    note: >
+      Raw text (questions, passages) can be used as-is; no lowercasing or punctuation
+      stripping is mandated by the paper.
+
+# ---------------------------------------------------------------------
+# 13. NETWORK ARCHITECTURE & TRAINING NOTES (NO NEW TRAINING)
+# ---------------------------------------------------------------------
+network_architecture_and_training:
+  architectures_used:
+    - name: "Transformer LLMs"
+      examples: ["GPT-4o", "GPT-4.1-Mini", "Claude-3.5-Sonnet", "Llama-3.3-70B-instruct"]
+      type: "decoder_only_transformer"
+      note: >
+        The study treats these models as black-box LLMs. Their internal architectures
+        are not modified by CompactPrompt.
+    - name: "MPNet / all-mpnet-base-v2"
+      type: "transformer_encoder"
+      role: "sentence_embedding_model_for_similarity_and_clustering"
+      note: >
+        All-mpnet-base-v2 is a pretrained embedding model; CompactPrompt uses it as-is
+        with no additional training.
+
+  training_parameters:
+    note: >
+      CompactPrompt is explicitly a training-free pipeline. It does NOT train or fine-tune
+      any neural networks. There are therefore no learning rates, epochs, batch sizes, or
+      optimizer parameters to report.
